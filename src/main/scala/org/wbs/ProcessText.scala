@@ -21,33 +21,46 @@ object ProcessText {
   //Cargar StopWords
   val stopWordsGer = Source.fromFile("resources/stopWordsGer.txt").getLines().mkString(" ")
 
+  var text: Tuple2[String,Int] = ("",0)
+  var BGram: DataFrame = null
+  var FGram: DataFrame = null
 
-  def main(text: Tuple2[String,Int]): (RDD[(String, Double, Double, Double)], Tuple2[String,Int]) = {
+
+
+  def main(): (RDD[(String, Double, Double, Double)], Tuple2[String,Int]) = {
 //Tuple2[Tuple2[String,Int],RDD[String]]
 
     //Pesos para realizar el analisis, probar a realizar una combinacion EXPONENCIAL de los modelos
-    val phraseWeight = 10 //peso phraseness para la puntuacion final
-    val infoWeight = 100 // peso informativeness para la puntuacion final
+    val phraseWeight = 1 //peso phraseness para la puntuacion final
+    val infoWeight = 1 // peso informativeness para la puntuacion final
 
-    //Separo en palabras
-    val tokenText =sc.parallelize(Seq(tokenize(text._1)))
-
-    //Creo el dataframe para pasarle a los N-Gram
-    val dataFrameText = sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
+//    //Separo en palabras
+//    val tokenText =sc.parallelize(Seq(tokenize(text._1)))
+//
+//    //Creo el dataframe para pasarle a los N-Gram
+//    val dataFrameText = sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
 
     //Define N-Grams
     val ngram1 = new NGram().setInputCol("text").setOutputCol("ngrams").setN(1)
     val ngram2 = new NGram().setInputCol("text").setOutputCol("ngrams").setN(2)
 
-    //Creo los n-gram para el texto BG ()
-    val BGGram = createNGram(getBG(sc, sqlContext), ngram1, ngram2, stopWordsGer)
+//    //Creo los n-gram para el texto BG ()
+//    val BGGram = createNGram(getBG(sc, sqlContext), ngram1, ngram2, stopWordsGer)
+//    val BGram1 = BGGram._1
+//    val BGram2 = BGGram._2
+//    BGram1.persist()
+//    BGram2.persist()
+
+    //Creo los n-gram para el texto BG desde la BBDD
+
+    val BGGram = createNGram(BGram, ngram1, ngram2, stopWordsGer)
     val BGram1 = BGGram._1
     val BGram2 = BGGram._2
     BGram1.persist()
     BGram2.persist()
 
     //Creo los n-gram para el texto de la BBDD
-    val FGGram = createNGram(dataFrameText, ngram1, ngram2, stopWordsGer)
+    val FGGram = createNGram(FGram, ngram1, ngram2, stopWordsGer)
     val FGram1 = FGGram._1
     val FGram2 = FGGram._2
 
@@ -85,10 +98,8 @@ object ProcessText {
           unigramFG = unigramFGtmp
         }catch{
           case e: Exception => {
-            println("EEEeeeeeeerrrrooooooooorrr: "+e)
+            println("Bigram First Word, no hay valor: "+ e + "unigramIter value: " + unigramIter.size)
           }
-        }
-        finally {
         }
         bigramIter.map{ bigram =>
           val (secondWord, (bigramFG, bigramBG)) = bigram
@@ -97,11 +108,12 @@ object ProcessText {
         }
       }
 
-   //Agrupo con la segunda palabra del bigram
-   //Ahora puedo anadir a la segunda palabra del bigram la cuenta del unigram
-    // Obtengo un dataframe con la primera palabra, segunda palabra, la cuenta de cuantas
-    // veces aparece el bigram en FG, cuenta de bigram en BG, cuenta de unigram(palabra1)
-    // en FG y cuenta de unigram(palabra2) en FG
+   // Agrupo con la segunda palabra del bigram
+   // Ahora puedo anadir a la segunda palabra del bigram la cuenta del unigram
+   // Obtengo un dataframe con la primera palabra, segunda palabra, la cuenta de cuantas
+   // veces aparece el bigram en FG, cuenta de bigram en BG, cuenta de unigram(palabra1)
+   // en FG y cuenta de unigram(palabra2) en FG
+
     val groupedBySecondWord = processedUnigrams.cogroup(bigramsWithFirstWordCount)
 
     //RDD[(String, String, Int, Int, Int, Int)]
@@ -114,7 +126,7 @@ object ProcessText {
           unigramFG = unigramFGtmp
         }catch{
           case e: Exception => {
-            println("EEEeeeeeeerrrrooooooooorrr: "+e)
+            println("Bigram Second Word, no hay valor: "+ e + "unigramIter value: " + unigramIter.size)
           }
         }
         finally{
@@ -149,10 +161,12 @@ object ProcessText {
 //    println(scoresOfBigrams)
     (scoresOfBigrams, text)
   }
+
   private def tokenize(text: String): Seq[String] = {
     // Paso a minusculas, elimino signos de puntuacion y espacios en blanco
     text.toLowerCase.replaceAll("\\p{P}", "").replaceAll("\\s+"," ").split("\\s").toSeq
   }
+
   private def createNGram(documentDF: DataFrame, n1:NGram, n2:NGram, stopWords:String): (RDD[(String, Int)], RDD[Tuple2[String,Int]]) ={
     //    RDD[(String, Int)]
     //Transformo el texto en n-gram 1 y 2
@@ -191,12 +205,48 @@ object ProcessText {
 
     (resultDF1,resultDF2)
   }
+
   private def getBG(sc:SparkContext,sqLContext: SQLContext): DataFrame ={
-    var textPath = "resources/Orthopadie.txt"
+//    var textPath = "resources/Orthopadie.txt"
+    var textPath = "resources/Göttingen.txt"
     val one = sc.textFile(textPath).map(line => tokenize(line))
     val two = sqLContext.createDataFrame(one.map(Tuple1.apply)).toDF("text")
     two
   }
+
+  def createBG (rDD: RDD[(String,Int)]): Unit ={
+    //Separo en palabras
+    val tokenText =sc.parallelize(Seq(tokenize(rDD.first()._1)))
+    //Creo el dataframe para pasarle a los N-Gram
+    BGram = sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
+  }
+
+  def createBGPath(path: String): Unit = {
+    val text = sc.textFile(path).map(line => tokenize(line))
+    BGram = sqlContext.createDataFrame(text.map(Tuple1.apply)).toDF("text")
+  }
+  def createBGText( text: String): Unit ={
+    val wordsText = sc.parallelize(Seq(tokenize(text)))
+    BGram = sqlContext.createDataFrame(wordsText.map(Tuple1.apply)).toDF("text")
+  }
+
+  def createFG (path: String) : Unit = {
+    val text = sc.textFile(path).map(line => tokenize(line))
+    FGram = sqlContext.createDataFrame(text.map(Tuple1.apply)).toDF("text")
+  }
+  def createFGText(text: String) : Unit ={
+    val wordsText = sc.parallelize(Seq(tokenize(text)))
+    FGram = sqlContext.createDataFrame(wordsText.map(Tuple1.apply)).toDF("text")
+  }
+
+  def setFG(textFG: Tuple2[String,Int]): Unit = {
+    text = textFG
+    //Separo en palabras
+    val tokenText =sc.parallelize(Seq(tokenize(textFG._1)))
+    //Creo el dataframe para pasarle a los N-Gram
+    FGram =  sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
+  }
+
   private def processBigrams(fg: RDD[(String, Int)], bg:RDD[(String, Int)]):RDD[(String, (String, (Int, Int)))] = {
     val union = fg.fullOuterJoin(bg)
       .map(x => {

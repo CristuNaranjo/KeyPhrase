@@ -9,7 +9,7 @@ object AnalyzeResult {
 
   def analyze (df: (RDD[(String, Double, Double, Double)],Tuple2[String,Int])):
 //  RDD[(String,Double,Int)]
-  Tuple2[Int,Double]={
+  Tuple2[Int,Double] = {
     val rdd = df._1
     val text = df._2._1
     val id = df._2._2
