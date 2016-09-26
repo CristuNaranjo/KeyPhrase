@@ -63,6 +63,13 @@ object ProcessText {
     val FGGram = createNGram(FGram, ngram1, ngram2, stopWordsGer)
     val FGram1 = FGGram._1
     val FGram2 = FGGram._2
+    FGram1.cache()
+    FGram2.cache()
+
+    BGram1.take(BGram1.count()toInt).foreach(println)
+    BGram2.take(BGram2.count()toInt).foreach(println)
+    FGram1.take(FGram1.count()toInt).foreach(println)
+    FGram2.take(FGram2.count()toInt).foreach(println)
 
     //Convierto los bigram a un string para luego filtrar facilmente (string.contains)
     val BigramsFG = FGram2.map(x=>x._1).collect().mkString(" ")
@@ -232,11 +239,13 @@ object ProcessText {
 
   def createFG (path: String) : Unit = {
     val text = sc.textFile(path).map(line => tokenize(line))
+    val strText = text.collect().mkString("")
     FGram = sqlContext.createDataFrame(text.map(Tuple1.apply)).toDF("text")
   }
-  def createFGText(text: String) : Unit ={
-    val wordsText = sc.parallelize(Seq(tokenize(text)))
+  def createFGText(textFG: String) : Unit ={
+    val wordsText = sc.parallelize(Seq(tokenize(textFG)))
     FGram = sqlContext.createDataFrame(wordsText.map(Tuple1.apply)).toDF("text")
+    text = (textFG,0)
   }
 
   def setFG(textFG: Tuple2[String,Int]): Unit = {

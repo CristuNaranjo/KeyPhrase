@@ -14,6 +14,7 @@ object AnalyzeResult {
     val text = df._2._1
     val id = df._2._2
     var res = (0,0.0)
+    println(text)
 
     //Filtro para quedarme solo con los bigram del texto FG y sus puntuaciones
     val bigramFiltered = rdd

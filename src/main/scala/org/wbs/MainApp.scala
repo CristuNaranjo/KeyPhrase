@@ -150,13 +150,18 @@ object MainApp {
         path
       }
       case "3" => {
-        println("Set input text")
-        var text = readLine()
-        while(readLine().length() > 0){
-          text += readLine()
+        println("* Set input text *")
+        var output = ""
+        def read():Unit={
+          val input = readLine()
+          if(input.isEmpty) ()
+          else {
+            output += input
+            read
+          }
         }
-        println(text)
-        ""
+        read
+        output
       }
       case _ => {
         println("Please select a numeric option")
@@ -176,18 +181,32 @@ object MainApp {
       case "1" => {
         println("* Selecting BBDD for FG text *")
         val id = "1"
+        println("********** Loading **********")
         id
+
       }
       case "2" => {
         println("* Set path for FG text *")
         var path = readLine()
         path = "/" + path
+        println("********** Loading **********")
         path
+
       }
       case "3" => {
-        println("Set input text")
-        val text = readLine()
-        text
+        println("* Set input text *")
+        var output = ""
+        def read():Unit={
+          val input = readLine()
+          if(input.isEmpty) ()
+          else {
+            output += input
+            read
+          }
+        }
+        read
+        println("********** Loading **********")
+        output
       }
       case _ => {
         println("Please select a numeric option")
