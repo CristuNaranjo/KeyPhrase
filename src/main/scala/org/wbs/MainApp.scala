@@ -12,10 +12,10 @@ import org.apache.spark.sql.{DataFrame, SQLContext}
 object MainApp {
 
   //Datos para la conexion BBDD
-  val userBBDD = "root"
-  val passBBDD = "1"
-  val pathBBDD = "jdbc:mysql://localhost:3306/clients"
-  val tableBBDD = "crawler_data"
+  val userDB = "root"
+  val passDB = "1"
+  val pathDB = "jdbc:mysql://localhost:3306/clients"
+  val tableDB = "crawler_data"
 
   //Inicializar Spark
   val sparkConf = new SparkConf().setAppName("Phrases").setMaster("local[4]")
@@ -28,38 +28,29 @@ object MainApp {
     //opcionBG puede ser ID para BG o String(path o text)
     val opBG = menuBG()
     val optionBG : Either[String,Int] = try{
+      if(opBG.toInt > 2) {
+        println("Wrong option, closing...")
+        sys.exit()
+      }
       Right(opBG.toInt)
     }catch {
       case e: Exception => Left(opBG)
     }
-    //opcionFG puede ser ID o path
-    val opFG = menuFG()
-    val optionFG : Either[String,Int] = try{
-      Right(opFG.toInt)
-    }catch {
-      case e: Exception => Left(opFG)
-    }
-
-//    //Conexion BBDD
-//    val properties = new Properties()
-//    properties.setProperty("user", userBBDD)
-//    properties.setProperty("password", passBBDD)
-//    properties.setProperty("driver", "com.mysql.jdbc.Driver")
-//
-//    //Lectura BBDD completa
-//    val jdbcDF = sqlContext.read
-//      .jdbc(pathBBDD,tableBBDD,properties)
-
-//    Selecciona solo texto y para cada texto realiza el analisis
-//    val justText = jdbcDF.select("text","id", "keyword").map(row=>(row.getAs[String]("text"),row.getAs[Int]("id"), row.getAs[String]("keyword")))
-
-//    var processedText:(RDD[(String, Double, Double, Double)], Tuple2[String,Int]) = _
     //Selecciona BG text por ID o lectura desde path
     optionBG match {
       case Right(id) => {
-        val df = getBBDD()
-        val justText = df.select("text","id", "keyword").map(row=>(row.getAs[String]("text"),row.getAs[Int]("id"), row.getAs[String]("keyword")))
-        ProcessText.createBG(justText.map(x=>(x._1,x._2)).filter(x => x._2 == id))
+        if(id == 1) {
+          val df = getDB()
+          val justText = df.select("text","id", "keyword").map(row=>(row.getAs[String]("text"),row.getAs[Int]("id"), row.getAs[String]("keyword")))
+          ProcessText.createBG(justText.map(x=>(x._1,x._2)).filter(x => x._2 == id))
+        }else if(id == 2){
+          println("********** Creating BG from DB **********")
+          val df = getDB()
+          val DBText = df.select("text").map(row=>(row.getAs[String]("text")))
+          val numKeyWords = 20
+          ProcessText.getBGfromDB(DBText, numKeyWords)
+
+        }
       }
       case Left(str) => {
         if(str.startsWith("/")){
@@ -71,10 +62,19 @@ object MainApp {
         }
       }
     }
+
+    //opcionFG puede ser ID o path
+    val opFG = menuFG()
+    val optionFG : Either[String,Int] = try{
+      Right(opFG.toInt)
+    }catch {
+      case e: Exception => Left(opFG)
+    }
+
     //Selecciona FG text por ID o lectura desde path
     optionFG match {
       case Right(id) => {
-        val df = getBBDD()
+        val df = getDB()
         val justText = df.select("text","id", "keyword").map(row=>(row.getAs[String]("text"),row.getAs[Int]("id"), row.getAs[String]("keyword")))
         val processedText = justText.map(x=>(x._1,x._2)).map(x =>{
             ProcessText.setFG(x)
@@ -82,7 +82,8 @@ object MainApp {
           }
         )
         val result = processedText.map(x => AnalyzeResult.analyze(x))
-        result.take(result.count().toInt).foreach(println)
+        val resultOrdered = result.map(x => (x._2,x._1)).sortByKey(false).map(x => (x._2,x._1))
+        resultOrdered.take(resultOrdered.count().toInt).foreach(println)
       }
       case Left(str) => {
         if(str.startsWith("/")) {
@@ -100,46 +101,21 @@ object MainApp {
       }
     }
 
-//    //Selecciono BG from BBDD
-//    ProcessText.createBG(justText.filter(x => x._2 == 33000))
-
-//    //Proceso el texto
-//    val processedText = justText.map(x=>(x._1,x._2)).map(x => ProcessText.main(x))
-
-
-//    //Selecciono solo un texto para las pruebas!
-//    val textId = justText.filter(x=> x._2==33333)
-//    //Proceso el texto de pruebas
-//    val processedText = textId.map(x => ProcessText.main(x))
-
-//    println(processedText.count())
-//    processedText.foreach(x => x._1.take(x._1.count().toInt).foreach(println))
-
-//    val result = processedText.map(x => AnalyzeResult.analyze(x))
-//    val result = ProcessText.main(justText.take(1)(0))
-//    println("resultkausdhfadksuhfdasfb;asdki;kjvfbdaslvgfbdas/gfkjhdas;fkjbad.sfkjhdas;nf")
-//    val test = sc.broadcast(result.map(x=>x.collect()))
-//    val test = result.flatMap(_.collect().toSeq).keyBy(x=>x)
-//    val test2 = test.map(x=> x)
-//    result.take(20).foreach(println)
-//    val res =result.count()
-//    result.take(result.count().toInt).foreach(println)
-
-//    println("Datos antes de procesar: " + justText.count())
-//    println("Datos dspues de procesar: " + processedText.count())
-//    println("Resultados: " + res)
     sc.stop()
   }
   def menuBG(): String = {
-    println("************ MENU *************")
-    println("* 1. Select BG text from BBDD *")
-    println("* 2. Select BG text from PATH *")
-    println("* 3. Input text for BG        *")
-    println("*******************************")
+    println("************ MENU BG **************")
+    println("**                               **")
+    println("**  1. Select BG text from DB    **")
+    println("**  2. Select BG text from PATH  **")
+    println("**  3. Input text for BG         **")
+    println("**                               **")
+    println("***********************************")
     val input = readLine()
     input match {
       case "1" => {
-        println("* Set ID for BG text *")
+        println("* 1. Select ID for BG text *")
+        println("* 2. Get BG from all DB *")
         val id = readLine()
         id
       }
@@ -171,11 +147,14 @@ object MainApp {
     }
   }
   def menuFG(): String = {
-    println("*******************************")
-    println("* 1. Select FG text from BBDD *")
-    println("* 2. Select FG text from PATH *")
-    println("* 3. Input text for FG        *")
-    println("*******************************")
+    println()
+    println("************ MENU FG **************")
+    println("**                               **")
+    println("**  1. Select FG text from DB    **")
+    println("**  2. Select FG text from PATH  **")
+    println("**  3. Input text for FG         **")
+    println("**                               **")
+    println("***********************************")
     val input = readLine()
     input match {
       case "1" => {
@@ -216,15 +195,15 @@ object MainApp {
     }
   }
 
-  def getBBDD(): DataFrame = {
+  def getDB(): DataFrame = {
     //Conexion BBDD
     val properties = new Properties ()
-    properties.setProperty ("user", userBBDD)
-    properties.setProperty ("password", passBBDD)
+    properties.setProperty ("user", userDB)
+    properties.setProperty ("password", passDB)
     properties.setProperty ("driver", "com.mysql.jdbc.Driver")
     //Lectura BBDD completa
     val jdbcDF = sqlContext.read
-    .jdbc (pathBBDD, tableBBDD, properties)
+    .jdbc (pathDB, tableDB, properties)
     jdbcDF
   }
 }

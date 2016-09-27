@@ -213,12 +213,31 @@ object ProcessText {
     (resultDF1,resultDF2)
   }
 
-  private def getBG(sc:SparkContext,sqLContext: SQLContext): DataFrame ={
-//    var textPath = "resources/Orthopadie.txt"
-    var textPath = "resources/Göttingen.txt"
-    val one = sc.textFile(textPath).map(line => tokenize(line))
-    val two = sqLContext.createDataFrame(one.map(Tuple1.apply)).toDF("text")
-    two
+   def getBGfromDB(rDD: RDD[(String)], numKeyWords: Int): Unit = {
+     val tokenText = rDD.map(line => tokenize(line))
+     val DF = sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
+     val ngram1BG = new NGram().setInputCol("text").setOutputCol("ngrams").setN(1)
+     val DFtrans = ngram1BG.transform(DF)
+     val resultDF = DFtrans
+       .map(frame => frame.getAs[Stream[String]]("ngrams").toList)
+       .flatMap(x=>x) //separo arrays en palabras
+       .filter(x => (x!="" || x!=" ")) // elimino los espacios en blanco {n1}
+       .filter(word => !stopWordsGer.contains(word)) //elimino las stopWords
+       .map(ngram => (ngram,1)) //convierto en tuple (palabra,numero)
+       .reduceByKey((a,b) => a + b) //cuento las palabras iguales
+       .map(tuple => (tuple._2, tuple._1))// cambio el orden para hacer key:value y poder ordenar por numero, no por palabra
+       .sortByKey(false) //ordena descendente
+       .map(tuple => (tuple._2, tuple._1))
+     val keyWords = resultDF.take(numKeyWords).map(x => x._1).mkString(" ")
+     println(" Keywords: " + keyWords)
+     val text = sc.parallelize(Seq(keyWords.split(" ")))
+     BGram = sqlContext.createDataFrame(text.map(Tuple1.apply)).toDF("text")
+
+
+//     val UniCount = BGUnigramDB.map(x => (x._1,1))
+//     val reduced = UniCount.reduceByKey((a,b) => a + b)
+//     val orderedByCount = reduced.map(x => (x._2, x._1)).sortByKey(false).map(x=>(x._2,x._1))
+//     orderedByCount.take(30).foreach(println)
   }
 
   def createBG (rDD: RDD[(String,Int)]): Unit ={
@@ -238,9 +257,12 @@ object ProcessText {
   }
 
   def createFG (path: String) : Unit = {
-    val text = sc.textFile(path).map(line => tokenize(line))
-    val strText = text.collect().mkString("")
-    FGram = sqlContext.createDataFrame(text.map(Tuple1.apply)).toDF("text")
+    val fileDF = sc.textFile(path)
+//      .map(line => tokenize(line))
+    val strText = fileDF.collect().mkString("").toLowerCase.replaceAll("\\p{P}", "").replaceAll("\\s+"," ")
+    text = (strText,0)
+    val tokenText = fileDF.map(line => tokenize(line))
+    FGram = sqlContext.createDataFrame(tokenText.map(Tuple1.apply)).toDF("text")
   }
   def createFGText(textFG: String) : Unit ={
     val wordsText = sc.parallelize(Seq(tokenize(textFG)))
